@@ -28,11 +28,11 @@ Here is an example of a distributing the calculation of PI to several decimal pl
 $ testbroker &
 $ testworker &
 $ seq 5 | awk '{print "bin/pi " $1}' | ./testclient
-```php
+```
 
 The results are:
 
-```
+```bash
 Connecting to tcp://localhost:2224
 Releasing the hounds: 5 commands to execute
 OK! bin/pi 1 ⌚8.14ms
