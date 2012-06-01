@@ -1,6 +1,6 @@
 # Testcloud
 
-Testcloud allows for the distributed execution of a collection of commands, and aggregates the 
+Testcloud allows for the distributed execution of a collection of commands, and aggregates the
 results on the calling client.
 
 ## Install
@@ -17,7 +17,7 @@ $ echo "extension=zmq.so" >> /etc/php.ini
 The recommended way to install testcloud is [through composer](http://getcomposer.org).
 
 ```bash
-$ php composer.phar create-project 99designs/testcloud /usr/local/testcloud 
+$ php composer.phar create-project 99designs/testcloud /usr/local/testcloud
 ```
 
 ## Example
