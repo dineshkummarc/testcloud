@@ -1,0 +1,66 @@
+#!/usr/bin/env php
+<?php
+
+require(dirname(__FILE__).'/../vendor/autoload.php');
+require(dirname(__FILE__).'/../lib/Zmsg.php');
+
+$options = new \Ergo\Console\Options($argv,array(
+	'--help','-h','--connect=NULL'
+));
+
+// show help
+if($options->has('-h','--help') || $options->errors())
+{
+	$options->printErrors();
+
+	echo "\nusage: $argv[0] [..args] testfile\n\n";
+	echo " --help             : this documentation\n";
+	echo "\n";
+	exit(1);
+}
+
+$endpoint = $options->value('--connect') ?: 'tcp://localhost:2225';
+printf("W: Connecting to %s for tests\n", $endpoint);
+
+$context = new ZMQContext();
+$worker = $context->getSocket(ZMQ::SOCKET_REQ);
+$worker->connect($endpoint);
+
+$worker->send('READY');
+$running = true;
+printf("W: Ready for tests\n");
+
+while($running)
+{
+	$zmsg = new Zmsg($worker);
+	$zmsg->recv();
+
+	$cmd = $zmsg->body();
+	$timer = microtime(true);
+
+	echo "B: $cmd\n";
+
+	$proc = proc_open(
+		"$cmd 2>&1",
+		array(1=>array('pipe','w')),
+		$pipes
+	);
+
+	$stdout = stream_get_contents($pipes[1]);
+	echo "$stdout\n";
+
+	fclose($pipes[1]);
+  $exitcode = proc_close($proc);
+
+	$r = array(
+		'cmd'=>$cmd,
+		'exitcode'=>$exitcode,
+		'stdout'=>$stdout,
+		'time'=>(microtime(true)-$timer)*1000
+	);
+
+	$zmsg->body_set(json_encode($r));
+	$zmsg->send();
+}
+
+$env->destroy();

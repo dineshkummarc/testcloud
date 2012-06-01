@@ -1,0 +1,18 @@
+{
+    "hash": "651d5524637f42116352a5bb15302e51",
+    "packages": [
+        {
+            "package": "99designs/ergo",
+            "version": "dev-master",
+            "source-reference": "44591105140863b744e597249e3dcfec4ba66beb"
+        }
+    ],
+    "packages-dev": null,
+    "aliases": [
+
+    ],
+    "minimum-stability": "dev",
+    "stability-flags": [
+
+    ]
+}

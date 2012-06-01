@@ -1,0 +1,97 @@
+#!/usr/bin/env php
+<?php
+
+require(dirname(__FILE__).'/../vendor/autoload.php');
+require(dirname(__FILE__).'/../lib/Zmsg.php');
+
+$options = new \Ergo\Console\Options($argv,array(
+	'--help','-h','--upstream?=NULL','--workers?=tcp://*:2225','--clients?=tcp://*:2224'
+));
+
+// show help
+if($options->has('-h','--help') || $options->errors())
+{
+	$options->printErrors();
+
+	echo "\nusage: $argv[0] [..args] testfile\n\n";
+	echo " --help             : this documentation\n";
+	echo " --upstream addr    : connect to an upstream broker\n";
+	echo " --workers addr     : where to listen for workers\n";
+	echo " --clients addr     : where to listen for clients\n";
+	echo "\n";
+	exit(1);
+}
+
+$context = new ZMQContext();
+
+if($options->has('--upstream'))
+{
+	$frontend = new ZMQSocket($context, ZMQ::SOCKET_DEALER);
+	$frontend->connect($upstreamConnect = $options->value('--upstream'));
+	$frontend->send('READY');
+	echo "Connecting upstream to $upstreamConnect\n";
+}
+else
+{
+	$frontend = new ZMQSocket($context, ZMQ::SOCKET_ROUTER);
+	$frontend->bind($clientBind = $options->value("--clients"));
+	echo "Listening for clients on $clientBind\n";
+}
+
+$backend = new ZMQSocket($context, ZMQ::SOCKET_ROUTER);
+$backend->bind($workerBind = $options->value("--workers"));
+echo "Listening for workers on $workerBind\n";
+
+$available_workers = 0;
+$worker_queue = array();
+$writeable = $readable = array();
+
+while(true)
+{
+  $poll = new ZMQPoll();
+
+  // poll front-end only if we have available workers
+  if($available_workers > 0)
+    $poll->add($frontend, ZMQ::POLL_IN);
+
+  // always poll for worker activity on backend
+  $poll->add($backend, ZMQ::POLL_IN);
+  $events = $poll->poll($readable, $writeable);
+
+	if($events > 0)
+	{
+		foreach($readable as $socket)
+		{
+			if($socket === $backend)
+			{
+        $zmsg = new Zmsg($socket);
+				$zmsg->recv();
+
+        $available_workers++;
+				array_push($worker_queue, $zmsg->unwrap());
+				printf("W: %s\n", $zmsg->body());
+
+				if($zmsg->body() != "READY")
+          $zmsg->set_socket($frontend)->send();
+			}
+			else if($socket === $frontend)
+			{
+				$zmsg = new Zmsg($socket);
+				$zmsg->recv();
+				printf("C: %s\n", $zmsg->body());
+
+				if($zmsg->body() == "HELLO")
+				{
+					$zmsg->set_socket($frontend)->send();
+				}
+				else
+				{
+					$zmsg->wrap(array_shift($worker_queue), "");
+					$zmsg->set_socket($backend)->send();
+					$available_workers--;
+				}
+      }
+    }
+  }
+}
+

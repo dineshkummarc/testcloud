@@ -1,0 +1,22 @@
+{
+    "name": "99designs/testcloud",
+    "description": "Distributes the running of commands across a group of workers connected via a broker",
+    "keywords": ["test","queue","distribute"],
+    "homepage": "http://github.com/99designs/testcloud",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Lachlan Donald",
+            "email": "lachlan@99designs.com"
+        },
+        {
+            "name": "Richo Healey",
+            "email": "richo@99designs.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.3.2",
+        "99designs/ergo": ">=2.0.0"
+    },
+    "bin": ["bin/testcloud", "bin/testclient", "bin/testworker"]
+}
