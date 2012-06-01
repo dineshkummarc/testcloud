@@ -8,7 +8,7 @@ results on the calling client.
 Before you install testcloud, install zeromq and the php zeromq binding:
 
 ```bash
-$ aptitude install zeromq
+$ aptitude install zeromq-bin
 $ pear channel-discover pear.zero.mq
 $ pecl install zero.mq/zmq-beta
 $ echo "extension=zmq.so" >> /etc/php.ini
