@@ -20,7 +20,7 @@ if($options->has('-h','--help') || $options->errors())
 }
 
 $endpoint = $options->value('--connect') ?: 'tcp://localhost:2225';
-printf("W: Connecting to %s for tests\n", $endpoint);
+printf("Connecting to %s for tests\n", $endpoint);
 
 $context = new ZMQContext();
 $worker = $context->getSocket(ZMQ::SOCKET_REQ);
@@ -28,22 +28,27 @@ $worker->connect($endpoint);
 
 $worker->send('READY');
 $running = true;
-printf("W: Ready for tests\n");
+$cwd = getcwd();
+
+printf("Ready for tests\n");
 
 while($running)
 {
 	$zmsg = new Zmsg($worker);
 	$zmsg->recv();
 
-	$cmd = $zmsg->body();
+	$body = $zmsg->body();
+	$req = json_decode($body);
 	$timer = microtime(true);
+	$dir = isset($req->cwd) ? realpath($req->cwd) : $cwd;
 
-	echo "B: $cmd\n";
-
+	echo "C: $req->cmd (in $dir)\n";
+		
 	$proc = proc_open(
-		"$cmd 2>&1",
+		"$req->cmd 2>&1",
 		array(1=>array('pipe','w')),
-		$pipes
+		$pipes,
+		$dir
 	);
 
 	$stdout = stream_get_contents($pipes[1]);
@@ -53,7 +58,7 @@ while($running)
   $exitcode = proc_close($proc);
 
 	$r = array(
-		'cmd'=>$cmd,
+		'cmd'=>$req->cmd,
 		'exitcode'=>$exitcode,
 		'stdout'=>$stdout,
 		'time'=>(microtime(true)-$timer)*1000
