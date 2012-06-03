@@ -23,27 +23,34 @@ $endpoint = $options->value('--connect') ?: 'tcp://localhost:2225';
 printf("Connecting to %s for tests\n", $endpoint);
 
 $context = new ZMQContext();
-$worker = $context->getSocket(ZMQ::SOCKET_REQ);
+$worker = $context->getSocket(ZMQ::SOCKET_DEALER);
+$worker->setSockOpt(ZMQ::SOCKOPT_IDENTITY, trim(`hostname`)."#worker".getmypid());
 $worker->connect($endpoint);
 
-$worker->send('READY');
 $running = true;
 $cwd = getcwd();
 
-printf("Ready for tests\n");
-
 while($running)
 {
+	// tell the broker we are ready for a test
+	$worker->send("READY");
+
+	// wait till we get a test
 	$zmsg = new Zmsg($worker);
 	$zmsg->recv();
 
 	$body = $zmsg->body();
 	$req = json_decode($body);
+
 	$timer = microtime(true);
 	$dir = isset($req->cwd) ? realpath($req->cwd) : $cwd;
 
-	echo "C: $req->cmd (in $dir)\n";
-		
+	echo "C: $req->cmd (in $dir)\n";	
+
+	// tell the worker we have queued the test
+	$zmsg->body_set("QUEUED $body");
+	$zmsg->send(false);
+
 	$proc = proc_open(
 		"$req->cmd 2>&1",
 		array(1=>array('pipe','w')),
@@ -64,7 +71,7 @@ while($running)
 		'time'=>(microtime(true)-$timer)*1000
 	);
 
-	$zmsg->body_set(json_encode($r));
+	$zmsg->body_set('RESULT '.json_encode($r));
 	$zmsg->send();
 }
 

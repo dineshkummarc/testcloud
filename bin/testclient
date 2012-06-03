@@ -26,92 +26,92 @@ if($options->has('-h','--help') || $options->errors())
 	exit(1);
 }
 
-$commands = array();
-$success = false;
-$results = array();
-$attempts = array();
-
 // test client
 $context = new ZMQContext();
 $client = new ZMQSocket($context, ZMQ::SOCKET_DEALER);
-$client->setSockOpt(ZMQ::SOCKOPT_LINGER, 0);
+$client->setSockOpt(ZMQ::SOCKOPT_IDENTITY, trim(`hostname`)."#client".getmypid());
 $client->connect($options->value('--connect'));
 
 if($options->has('-v'))
 	printf("Connecting to %s\n", $options->value('--connect'));
 
-$stdin = fopen('php://stdin', 'r');
 $timer = microtime(true);
+$commands = array();
+$queued = array();
+$pending = array();
+$results = array();
+$output = new ANSIColor();
 $success = true;
 
-printf("Unleashing the hounds!\n");
-
-// read responses
-while(!feof($stdin) || count($commands) > 0 || count($attempts) != 0)
+while(($line = trim(fgets(STDIN))) || count($queued) || count($pending))
 {
-	if(!feof($stdin) && $line = trim(fgets($stdin, 4096)))
+	// buffer stdin commands
+	if($line)
 		$commands []= $line;
 
+	$read = $write = array();
 	$poll = new ZMQPoll();
 	$poll->add($client, ZMQ::POLL_IN);
 
-	// only listen to client socket if have commands
-	if(count($commands))
+	if(count($commands) && !count($queued))
 		$poll->add($client, ZMQ::POLL_OUT);
 
-	$output = new ANSIColor();
-	$write = $read = array();
-	$events = $poll->poll($read, $write, POLL_TIMEOUT);
+	$poll->poll($read, $write, 1000);
 
-	if($events > 0)
+	// read some replies
+	foreach($read as $socket)
 	{
-		foreach($read as $socket)
+		$line = $socket->recv();
+
+		if(preg_match('/^QUEUED (.+?)$/', $line, $m))
 		{
-			$line = $socket->recv();
-			$r = json_decode($line);
+			$req = json_decode($m[1]);
+			unset($queued[$req->cmd]);
+			$pending[$req->cmd] = microtime(true);
+		}
+		else if(preg_match('/^RESULT (.+?)$/', $line, $m))
+		{
+			$rep = json_decode($m[1]);
+			$results[$rep->cmd] = $rep;
 
-			if($line[0] != '{')
-				die("Malformed json response: $line");
-
-			if($r->exitcode === 0)
+			if($rep->exitcode === 0)
 			{
 				echo $output->bold_brightgreen("OK! ");
-				echo $output->green("{$r->cmd} ");
+				echo $output->green("{$rep->cmd} ");
 			}
 			else
 			{
-				echo $output->bold_brightred("FAIL({$r->exitcode}) ");
-				echo $output->red("{$r->cmd} ");
+				echo $output->bold_brightred("FAIL({$rep->exitcode}) ");
+				echo $output->red("{$rep->cmd} ");
+				$success = false;
 			}
 
-			if($options->has('--slow') && $r->time > $options->value('--slow'))
-				echo $output->underline_red(sprintf("⌚%.2fms\n", $r->time));
+			if($options->has('--slow') && $rep->time > $options->value('--slow'))
+				echo $output->underline_red(sprintf("⌚%.2fms\n", $rep->time));
 			else
-				echo $output->white(sprintf("⌚%.2fms\n", $r->time));
+				echo $output->white(sprintf("⌚%.2fms\n", $rep->time));
 
 			if(!$options->has('--brief','-b'))
-				printf("%s\n", $r->stdout);
+				printf("%s\n", $rep->stdout);
 
-			unset($attempts[$r->cmd]);
-			$results[$r->cmd] = $r;
-			$success = $success && $r->exitcode === 0;
+			unset($pending[$rep->cmd]);
 		}
-		foreach($write as $socket)
+		else
 		{
-			$cmd = array_shift($commands);
-			$req = array('cmd'=>$cmd, 'cwd'=>$options->value(':dir') ?: getcwd());
-			$socket->send(json_encode($req));
-
-			if($options->has('-v'))
-				printf("Sending: {$req['cmd']}\n");
-
-			$attempts[$cmd] []= microtime(true);
+			die("Unknown response $line");
 		}
 	}
-	else
+
+	// send some commands
+	foreach($write as $socket)
 	{
-		// this happens when we are waiting.
-		// TODO: check timed out tests, resend them
+		$req = array('cmd'=>array_shift($commands), 'cwd'=>$options->value(':dir') ?: getcwd());
+
+		if($options->has('-v'))
+			printf("Sending: {$req['cmd']}\n");
+
+		$socket->send(json_encode($req));
+		$queued[$req['cmd']] = microtime(true);
 	}
 }
 
@@ -129,4 +129,3 @@ echo $success
 
 printf("Ran %d commands in ⌚%.2fs, result hash is %s\n",
 	count($results), microtime(true)-$timer, $outputhash);
-
