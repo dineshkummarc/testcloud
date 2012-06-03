@@ -46,7 +46,7 @@ while($running)
 	$timer = microtime(true);
 	$dir = isset($req->cwd) ? realpath($req->cwd) : $cwd;
 
-	echo "C: $req->cmd (in $dir)\n";	
+	echo "C: $req->cmd (in $dir)\n";
 
 	// tell the worker we have queued the test
 	$zmsg->body_set("QUEUED $body");

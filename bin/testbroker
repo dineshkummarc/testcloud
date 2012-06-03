@@ -27,7 +27,7 @@ $context = new ZMQContext();
 if($options->has('--upstream'))
 {
 	$frontend = new ZMQSocket($context, ZMQ::SOCKET_DEALER);
-	$frontend->setSockOpt(ZMQ::SOCKOPT_IDENTITY, trim(`hostname`)."#broker".getmypid());	
+	$frontend->setSockOpt(ZMQ::SOCKOPT_IDENTITY, trim(`hostname`)."#broker".getmypid());
 	$frontend->connect($upstreamConnect = $options->value('--upstream'));
 	echo "Connecting upstream to $upstreamConnect\n";
 }
