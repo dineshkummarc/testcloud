@@ -14,6 +14,7 @@ if($options->has('-h','--help') || $options->errors())
 	$options->printErrors();
 
 	echo "\nusage: $argv[0] [..args] testfile\n\n";
+  echo " --connect broker   : connect to broker, instead of localhost\n";
 	echo " --help             : this documentation\n";
 	echo "\n";
 	exit(1);
