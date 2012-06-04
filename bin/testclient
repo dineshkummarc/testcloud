@@ -129,3 +129,5 @@ echo $success
 
 printf("Ran %d commands in ⌚%.2fs, result hash is %s\n",
 	count($results), microtime(true)-$timer, $outputhash);
+
+exit($success ? 0 : 1);
