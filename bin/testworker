@@ -1,8 +1,21 @@
 #!/usr/bin/env php
 <?php
 
+define('WORKING_INTERVAL', 2);
+define('READY_RESEND', 5);
+
 require(dirname(__FILE__).'/../vendor/autoload.php');
 require(dirname(__FILE__).'/../lib/Zmsg.php');
+
+function get_first_reader($socket, $timeout)
+{
+	$readable = $writable = array();
+  $poll = new ZMQPoll();
+	$poll->add($socket, ZMQ::POLL_IN);
+
+	if($poll->poll($readable, $writeable, $timeout))
+		return array_shift($readable);
+}
 
 $options = new \Ergo\Console\Options($argv,array(
 	'--help','-h','--connect=NULL'
@@ -21,20 +34,35 @@ if($options->has('-h','--help') || $options->errors())
 }
 
 $endpoint = $options->value('--connect') ?: 'tcp://localhost:2225';
+$identity = trim(`hostname`)."#worker".getmypid();
+
 printf("Connecting to %s for tests\n", $endpoint);
 
 $context = new ZMQContext();
 $worker = $context->getSocket(ZMQ::SOCKET_DEALER);
-$worker->setSockOpt(ZMQ::SOCKOPT_IDENTITY, trim(`hostname`)."#worker".getmypid());
+$worker->setSockOpt(ZMQ::SOCKOPT_IDENTITY, $identity);
 $worker->connect($endpoint);
 
 $running = true;
+$lastready = false;
 $cwd = getcwd();
 
 while($running)
 {
-	// tell the broker we are ready for a test
-	$worker->send("READY");
+	// wait till we get a test
+	$zmsg = new Zmsg($worker);
+	$zmsg->body_set('READY');
+	$zmsg->send();
+	$lastready = time();
+
+	while(!($reader = get_first_reader($worker, 1000)))
+	{
+		if((time()-$lastready) > READY_RESEND)
+		{
+			$worker->send("READY");
+			$lastready = time();
+		}
+	}
 
 	// wait till we get a test
 	$zmsg = new Zmsg($worker);
@@ -42,15 +70,17 @@ while($running)
 
 	$body = $zmsg->body();
 	$req = json_decode($body);
+	$hash = sha1($body);
+
+	// let the broker know we are still working
+	$zmsg->body_set("QUEUED $hash");
+	$zmsg->send(false);
 
 	$timer = microtime(true);
 	$dir = isset($req->cwd) ? realpath($req->cwd) : $cwd;
+	$stdout = NULL;
 
 	echo "C: $req->cmd (in $dir)\n";
-
-	// tell the worker we have queued the test
-	$zmsg->body_set("QUEUED $body");
-	$zmsg->send(false);
 
 	$proc = proc_open(
 		"$req->cmd 2>&1",
@@ -59,17 +89,29 @@ while($running)
 		$dir
 	);
 
-	$stdout = stream_get_contents($pipes[1]);
+	stream_set_blocking($pipes[1], 0); // non-blocking
+	$sockets = array($pipes[1]);
+
+	while(!feof($pipes[1]))
+	{
+		if(stream_select($r = $sockets, $w = NULL, $error = NULL, WORKING_INTERVAL))
+			$stdout .= fgets($pipes[1], 4096);
+
+		// let the broker know we are still working
+		$zmsg->body_set("WORKING $hash");
+		$zmsg->send(false);
+	}
+
 	echo "$stdout\n";
 
 	fclose($pipes[1]);
-  $exitcode = proc_close($proc);
+	$exitcode = proc_close($proc);
 
 	$r = array(
-		'cmd'=>$req->cmd,
+		'hash'=>$hash,
 		'exitcode'=>$exitcode,
 		'stdout'=>$stdout,
-		'time'=>(microtime(true)-$timer)*1000
+		'time'=>round((microtime(true)-$timer)*1000, 4),
 	);
 
 	$zmsg->body_set('RESULT '.json_encode($r));

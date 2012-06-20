@@ -1,13 +1,15 @@
 {
-    "hash": "9796de250defa8751b6613243fd78cb1",
+    "hash": "e27c5e5f258e7e3b8a40f91b0cfbef98",
     "packages": [
         {
             "package": "99designs/ergo",
             "version": "dev-master",
-            "source-reference": "44591105140863b744e597249e3dcfec4ba66beb"
+            "source-reference": "v2.1.0"
         }
     ],
-    "packages-dev": null,
+    "packages-dev": [
+
+    ],
     "aliases": [
 
     ],

@@ -16,7 +16,7 @@
     ],
     "require": {
         "php": ">=5.3.2",
-        "99designs/ergo": ">=2.0.0",
+        "99designs/ergo": ">=2.1.0",
         "ext-zmq": "1.0.*"
     },
     "bin": ["bin/testcloud", "bin/testclient", "bin/testworker", "bin/pi"]

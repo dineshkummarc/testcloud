@@ -1,6 +1,9 @@
 #!/usr/bin/env php
 <?php
 
+define('QUEUE_TIMEOUT', 5);
+define('WORKER_EXPIRE', 5);
+
 require(dirname(__FILE__).'/../vendor/autoload.php');
 require(dirname(__FILE__).'/../lib/Zmsg.php');
 
@@ -42,7 +45,8 @@ $backend = new ZMQSocket($context, ZMQ::SOCKET_ROUTER);
 $backend->bind($workerBind = $options->value("--workers"));
 echo "Listening for workers on $workerBind\n";
 
-$workers = new SplPriorityQueue();
+$workers = array();
+$pending = array();
 
 while(true)
 {
@@ -54,7 +58,7 @@ while(true)
     $poll->add($frontend, ZMQ::POLL_IN);
 
   $poll->add($backend, ZMQ::POLL_IN);
-  $events = $poll->poll($readable, $writeable);
+  $events = $poll->poll($readable, $writeable, 1000);
 
 	foreach($readable as $socket)
 	{
@@ -67,17 +71,55 @@ while(true)
 			printf("W (%s): %s\n", $identity, $zmsg->body());
 
 			// control messages from the worker
-			if($zmsg->parts() == 1 && $zmsg->address() == "READY")
-				$workers->insert($identity, 1);
+			if($zmsg->parts() == 1 && $zmsg->address() == 'READY')
+			{
+				$workers [] = array($identity, time());
+			}
+			else
+			{
+				if(preg_match('/^(QUEUED|WORKING) (.+?)$/', $zmsg->body(), $m))
+				{
+					$pending[$m[2]][2] = time();
+				}
+				else if(preg_match('/^RESULT (.+?)$/', $zmsg->body(), $m))
+				{
+					$resp = json_decode($m[1]);
+					unset($pending[$resp->hash]);
+				}
+			}
 
 			$zmsg->set_socket($frontend)->send();
 		}
 		else if($socket === $frontend)
 		{
 			printf("C: %s\n", $zmsg->body());
+			$worker = array_shift(array_shift($workers));
 
-			$zmsg->wrap($workers->extract(), "");
+			if(substr($zmsg->body(),0,1) == '{')
+				$pending[sha1($zmsg->body())] = array(clone $zmsg, $worker, microtime(true)*1000);
+
+			$zmsg->wrap($worker, "");
 			$zmsg->set_socket($backend)->send();
+		}
+	}
+
+	// expire worker references before follow up READY
+	foreach($workers as $idx=>$w)
+	{
+		if((time() - $w[1]) > WORKER_EXPIRE)
+			unset($workers[$idx]);
+	}
+
+	// requeue commands that have timed out
+	foreach($pending as $hash=>$entry)
+	{
+		if((time() - $entry[2]) > QUEUE_TIMEOUT && count($workers))
+		{
+			$worker = array_shift(array_shift($workers));
+			$pending[$hash] = array(clone $entry[0], $worker, time());
+
+			$entry[0]->wrap($worker, "");
+			$entry[0]->set_socket($backend)->send();
 		}
 	}
 }

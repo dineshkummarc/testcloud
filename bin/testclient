@@ -7,14 +7,15 @@ require(dirname(__FILE__).'/../lib/ANSIColor.php');
 
 define('POLL_TIMEOUT', 1000);
 
-$options = new \Ergo\Console\Options($argv,array(
-	'--help','-h','-v','--brief','-b','--connect=tcp://localhost:2224','--slow?=null',':dir'
+$opts = new \Ergo\Console\Options($argv,array(
+	'--help','-h','-v','--brief,-b','--connect=tcp://localhost:2224',
+	'--slow,-s=null','--failonly,-f',':dir'
 ));
 
 // show help
-if($options->has('-h','--help') || $options->errors())
+if($opts->has('-h','--help') || $opts->errors())
 {
-	$options->printErrors();
+	$opts->printErrors();
 
 	echo "\nusage: $argv[0] [workingdir] [..args]\n\n";
 
@@ -22,28 +23,51 @@ if($options->has('-h','--help') || $options->errors())
 	echo " --connect addr     : connect to a specific broker, defaults to tcp://localhost:2224\n";
 	echo " --brief -b         : display only a brief summary of each command\n";
 	echo " --slow millis      : shows tests that take more than N milliseconds to run as slow\n";
+	echo " --failonly -f      : show only failures\n";
 	echo "\n";
 	exit(1);
+}
+
+/**
+ * Render a testcloud response
+ * @return string
+ */
+function render_result($cmd, $resp, $brief=false, $slow=false)
+{
+	$c = new ANSIColor();
+
+	$output = $resp->exitcode === 0
+		? $c->bold_brightgreen("OK! ").$c->green("{$cmd} ")
+		: $c->bold_red("FAIL({$resp->exitcode}) ").$c->red("{$cmd} ")
+		;
+
+	if($slow && $resp->time > $slow)
+		$output .= $c->underline_red(sprintf("⌚%.2fms\n", $resp->time));
+	else
+		$output .= $c->white(sprintf("⌚%.2fms\n", $resp->time));
+
+	if($brief) $output .= "{$resp->stdout}\n";
+
+	return $output;
 }
 
 // test client
 $context = new ZMQContext();
 $client = new ZMQSocket($context, ZMQ::SOCKET_DEALER);
 $client->setSockOpt(ZMQ::SOCKOPT_IDENTITY, trim(`hostname`)."#client".getmypid());
-$client->connect($options->value('--connect'));
+$client->connect($opts->value('--connect'));
 
-if($options->has('-v'))
-	printf("Connecting to %s\n", $options->value('--connect'));
+if($opts->has('-v'))
+	printf("Connecting to %s\n", $opts->value('--connect'));
 
 $timer = microtime(true);
 $commands = array();
-$queued = array();
-$pending = array();
 $results = array();
 $output = new ANSIColor();
 $success = true;
+$queued = array();
 
-while(($line = trim(fgets(STDIN))) || count($queued) || count($pending))
+while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 {
 	// buffer stdin commands
 	if($line)
@@ -53,7 +77,7 @@ while(($line = trim(fgets(STDIN))) || count($queued) || count($pending))
 	$poll = new ZMQPoll();
 	$poll->add($client, ZMQ::POLL_IN);
 
-	if(count($commands) && !count($queued))
+	if(count($commands))
 		$poll->add($client, ZMQ::POLL_OUT);
 
 	$poll->poll($read, $write, 1000);
@@ -63,38 +87,25 @@ while(($line = trim(fgets(STDIN))) || count($queued) || count($pending))
 	{
 		$line = $socket->recv();
 
-		if(preg_match('/^QUEUED (.+?)$/', $line, $m))
+		if(preg_match('/^RESULT (.+?)$/', $line, $m))
 		{
-			$req = json_decode($m[1]);
-			unset($queued[$req->cmd]);
-			$pending[$req->cmd] = microtime(true);
+			$resp = json_decode($m[1]);
+
+			// in some failure scenarios, we get a 2+ responses
+			if(!isset($queued[$resp->hash]))
+				continue;
+
+			$req = $queued[$resp->hash]->req;
+
+			if($resp->exitcode !== 0 || !$opts->has('-f'))
+				echo render_result($req->cmd, $resp, $opts->value('-b'), $opts->value('-s'));
+
+			unset($queued[$resp->hash]);
+			$results [$resp->hash] = $resp;
 		}
-		else if(preg_match('/^RESULT (.+?)$/', $line, $m))
+		else if(preg_match('/^(WORKING|QUEUED) (.+?)$/', $line, $m))
 		{
-			$rep = json_decode($m[1]);
-			$results[$rep->cmd] = $rep;
-
-			if($rep->exitcode === 0)
-			{
-				echo $output->bold_brightgreen("OK! ");
-				echo $output->green("{$rep->cmd} ");
-			}
-			else
-			{
-				echo $output->bold_brightred("FAIL({$rep->exitcode}) ");
-				echo $output->red("{$rep->cmd} ");
-				$success = false;
-			}
-
-			if($options->has('--slow') && $rep->time > $options->value('--slow'))
-				echo $output->underline_red(sprintf("⌚%.2fms\n", $rep->time));
-			else
-				echo $output->white(sprintf("⌚%.2fms\n", $rep->time));
-
-			if(!$options->has('--brief','-b'))
-				printf("%s\n", $rep->stdout);
-
-			unset($pending[$rep->cmd]);
+			// do nothing
 		}
 		else
 		{
@@ -105,26 +116,31 @@ while(($line = trim(fgets(STDIN))) || count($queued) || count($pending))
 	// send some commands
 	foreach($write as $socket)
 	{
-		$req = array('cmd'=>array_shift($commands), 'cwd'=>$options->value(':dir') ?: getcwd());
+		$req = (object) array(
+			'cmd'=>array_shift($commands), 'cwd'=>$opts->value(':dir') ?: getcwd()
+		);
 
-		if($options->has('-v'))
-			printf("Sending: {$req['cmd']}\n");
+		if($opts->has('-v'))
+			printf("Sending: {$req->cmd}\n");
 
-		$socket->send(json_encode($req));
-		$queued[$req['cmd']] = microtime(true);
+		$json = json_encode($req);
+		$socket->send($json);
+
+		$hash = sha1($json);
+		$queued[$hash] = (object) array('req'=>$req, 'sent'=>time());
 	}
 }
 
 // calculate a summary
 ksort($results);
-$outputhash = array();
+$outputhash = NULL;
 
 foreach($results as $result)
-	$outputhash = sha1($outputhash.$result->cmd.$result->exitcode.$result->stdout);
+	$outputhash = sha1($outputhash.$result->hash.$result->stdout.$result->exitcode);
 
 echo $success
 	? $output->underline_green("All commands successfully executed ☃\n")
-	:  $output->underline_red("Some commands failed :(\n")
+	: $output->underline_red("Some commands failed :(\n")
 	;
 
 printf("Ran %d commands in ⌚%.2fs, result hash is %s\n",

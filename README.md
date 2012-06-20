@@ -62,24 +62,15 @@ A conversation below shows a broker and worker starting up:
 
 ```
 worker -> broker: READY
-broker -> worker: OK
 client -> broker: {"cmd":"pi 1"} 
-worker -> broker -> client: QUEUED {"cmd":"pi 2"}
-worker -> broker -> client: RESULT {"cmd":"pi 2","exitcode":0,"stdout":"3.12\n","time":13.953924179077}
+worker -> broker -> client: QUEUED 9f8490348425288cda75015983ac95c22d6823ce
+worker -> broker -> client: WORKING 9f8490348425288cda75015983ac95c22d6823ce
+worker -> broker -> client: WORKING 9f8490348425288cda75015983ac95c22d6823ce
+worker -> broker -> client: RESULT {"hash":"9f8490348425288cda75015983ac95c22d6823ce","exitcode":0,"stdout":"3.12\n","time":13.9539}
 worker -> broker: READY
-broker -> worker: OK
 ```
 
-At present no mechanism exists for retry-on-fail at any point in the stack.
-
-
-## Todo
-
-- Broker should re-dispatch commands to other workers if a worker fails to respond promptly with `QUEUED`
-- Broker should periodically expire it's list of worker candidates, pending a fresh `READY`
-- Workers should send `READY` during periods of inactivity and expect an `OK`
-- Workers should re-connect if several no `OK` is received several times
-- Workers should support sending a weighting with `READY` to allow preference to be given to non-interactive machines.  
+A worker sends READY when it needs jobs, WORKING whilst it's doing them and RESULT when it's done. When a worker isn't processing work, it should periodically send new READY commands.
 
 ## License
 
