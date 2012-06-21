@@ -98,7 +98,10 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 			$req = $queued[$resp->hash]->req;
 
 			if($resp->exitcode !== 0 || !$opts->has('-f'))
+			{
 				echo render_result($req->cmd, $resp, $opts->value('-b'), $opts->value('-s'));
+				$success = $success && ($resp->exitcode === 0);
+			}
 
 			unset($queued[$resp->hash]);
 			$results [$resp->hash] = $resp;
