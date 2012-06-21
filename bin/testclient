@@ -9,7 +9,8 @@ define('POLL_TIMEOUT', 1000);
 
 $opts = new \Ergo\Console\Options($argv,array(
 	'--help','-h','-v','--brief,-b','--connect=tcp://localhost:2224',
-	'--slow,-s=null','--failonly,-f',':dir'
+	'--slow,-s=null','--failonly,-f','--progress,-p',
+	':dir'
 ));
 
 // show help
@@ -46,10 +47,34 @@ function render_result($cmd, $resp, $brief=false, $slow=false)
 	else
 		$output .= $c->white(sprintf("⌚%.2fms\n", $resp->time));
 
-	if($brief) $output .= "{$resp->stdout}\n";
+	if(!$brief) $output .= "{$resp->stdout}\n";
 
-	return $output;
+	return "\033[K".$output;
 }
+
+function display_progress($x, $n, $timer)
+{
+	$ratio = $x/$n;
+	$percent = ceil($ratio*100);
+	$elapsed = microtime(true)-$timer;
+
+	printf("%d%% complete, %.2fs elapsed, %.2f per/s",
+		$percent, $elapsed,
+		($x==0 ? 0 : $elapsed/$x)
+	);
+
+	printf(" [%-40s]\n", str_repeat('=', ceil(39 * $ratio)).'>');
+	echo "\033[1A"; // up 1 line
+
+	if($x == $n)
+		echo "\n";
+}
+
+// hide the cursor
+echo "\033[?25l";
+register_shutdown_function(function(){
+	echo "\033[?25h";
+});
 
 // test client
 $context = new ZMQContext();
@@ -99,9 +124,15 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 
 			if($resp->exitcode !== 0 || !$opts->has('-f'))
 			{
-				echo render_result($req->cmd, $resp, $opts->value('-b'), $opts->value('-s'));
+				echo render_result($req->cmd, $resp, $opts->has('-b'), $opts->value('-s'));
 				$success = $success && ($resp->exitcode === 0);
 			}
+
+			display_progress(
+				count($results),
+				count($commands)+count($results)+count($queued),
+				$timer
+			);
 
 			unset($queued[$resp->hash]);
 			$results [$resp->hash] = $resp;
@@ -141,7 +172,9 @@ $outputhash = NULL;
 foreach($results as $result)
 	$outputhash = sha1($outputhash.$result->hash.$result->stdout.$result->exitcode);
 
-echo $success
+echo "\033[K";
+
+echo "\033[K" . $success
 	? $output->underline_green("All commands successfully executed ☃\n")
 	: $output->underline_red("Some commands failed :(\n")
 	;
