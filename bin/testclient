@@ -8,7 +8,7 @@ require(dirname(__FILE__).'/../lib/ANSIColor.php');
 define('POLL_TIMEOUT', 1000);
 
 $opts = new \Ergo\Console\Options($argv,array(
-	'--help','-h','-v','--brief,-b','--connect=tcp://localhost:2224',
+	'--help','-h','-v','--brief,-b','--connect,-c=tcp://localhost:2224',
 	'--slow,-s=null','--failonly,-f','--progress,-p',
 	':dir'
 ));
@@ -181,7 +181,7 @@ foreach($results as $result)
 
 echo "\033[K";
 
-echo "\033[K" . $success
+echo $success
 	? $output->underline_green("All commands successfully executed ☃\n")
 	: $output->underline_red("Some commands failed :(\n")
 	;
