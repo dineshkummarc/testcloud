@@ -25,6 +25,7 @@ if($opts->has('-h','--help') || $opts->errors())
 	echo " --brief -b         : display only a brief summary of each command\n";
 	echo " --slow millis      : shows tests that take more than N milliseconds to run as slow\n";
 	echo " --failonly -f      : show only failures\n";
+	echo " --progress -p      : show an ansi progress meter\n";
 	echo "\n";
 	exit(1);
 }
@@ -52,6 +53,9 @@ function render_result($cmd, $resp, $brief=false, $slow=false)
 	return "\033[K".$output;
 }
 
+/**
+ * Render a progress bar
+ */
 function display_progress($x, $n, $timer)
 {
 	$ratio = $x/$n;
@@ -60,7 +64,7 @@ function display_progress($x, $n, $timer)
 
 	printf("%d%% complete, %.2fs elapsed, %.2f per/s",
 		$percent, $elapsed,
-		($x==0 ? 0 : $elapsed/$x)
+		($x==0 ? 0 : $x/$elapsed)
 	);
 
 	printf(" [%-40s]\n", str_repeat('=', ceil(39 * $ratio)).'>');
@@ -128,11 +132,14 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 				$success = $success && ($resp->exitcode === 0);
 			}
 
-			display_progress(
-				count($results),
-				count($commands)+count($results)+count($queued),
-				$timer
-			);
+			if($opts->has('-p'))
+			{
+				display_progress(
+					count($results),
+					count($commands)+count($results)+count($queued),
+					$timer
+				);
+			}
 
 			unset($queued[$resp->hash]);
 			$results [$resp->hash] = $resp;
