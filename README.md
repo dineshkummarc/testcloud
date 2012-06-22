@@ -18,6 +18,7 @@ The recommended way to install testcloud is [through composer](http://getcompose
 
 ```bash
 $ php composer.phar create-project 99designs/testcloud /usr/local/testcloud
+ln -s /usr/local/testcloud/bin/* /usr/local/bin
 ```
 
 ## Example
@@ -27,14 +28,13 @@ Here is an example of a distributing the calculation of PI to several decimal pl
 ```bash
 $ testbroker &
 $ testworker &
-$ seq 5 | awk '{print "bin/pi " $1}' | ./testclient
+$ seq 5 | awk '{print "bin/pi " $1}' | ./testcloud
 ```
 
 The results are:
 
 ```bash
 Connecting to tcp://localhost:2224
-Releasing the hounds: 5 commands to execute
 OK! bin/pi 1 ⌚8.14ms
 2.8
 
@@ -56,13 +56,13 @@ Ran 5 commands in ⌚0.05s, result hash is 24aa911ac6e5f453c2ca1fa3cd8fe3ad2d6b1
 
 ## Protocol
 
-Testcloud is made up of workers, brokers and clients. Workers take jobs and synchronously execute them, returning results in JSON. Brokers bind on two points, one for downstream workers (or other brokers) and one for upstream workers. 
+Testcloud is made up of workers, brokers and clients. Workers take jobs and synchronously execute them, returning results in JSON. Brokers bind on two points, one for downstream workers (or other brokers) and one for upstream workers.
 
 A conversation below shows a broker and worker starting up:
 
 ```
 worker -> broker: READY
-client -> broker: {"cmd":"pi 1"} 
+client -> broker: {"cmd":"pi 1"}
 worker -> broker -> client: QUEUED 9f8490348425288cda75015983ac95c22d6823ce
 worker -> broker -> client: WORKING 9f8490348425288cda75015983ac95c22d6823ce
 worker -> broker -> client: WORKING 9f8490348425288cda75015983ac95c22d6823ce
