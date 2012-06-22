@@ -56,21 +56,23 @@ Ran 5 commands in ⌚0.05s, result hash is 24aa911ac6e5f453c2ca1fa3cd8fe3ad2d6b1
 
 ## Protocol
 
-Testcloud is made up of workers, brokers and clients. Workers take jobs and synchronously execute them, returning results in JSON. Brokers bind on two points, one for downstream workers (or other brokers) and one for upstream workers.
+Testcloud is made up of workers, brokers and clients. Workers take jobs and synchronously execute them,
+returning results in JSON. Brokers bind on two points, one for downstream workers (or other brokers) and one for upstream workers.
 
 A conversation below shows a broker and worker starting up:
 
 ```
-worker -> broker: READY
+worker -> broker: RDY
 client -> broker: {"cmd":"pi 1"}
-worker -> broker -> client: QUEUED 9f8490348425288cda75015983ac95c22d6823ce
-worker -> broker -> client: WORKING 9f8490348425288cda75015983ac95c22d6823ce
-worker -> broker -> client: WORKING 9f8490348425288cda75015983ac95c22d6823ce
-worker -> broker -> client: RESULT {"hash":"9f8490348425288cda75015983ac95c22d6823ce","exitcode":0,"stdout":"3.12\n","time":13.9539}
-worker -> broker: READY
+worker -> broker -> client: QUE 9f84903
+worker -> broker -> client: WRK 9f84903
+worker -> broker -> client: WRK 9f84903
+worker -> broker -> client: RES {"hash":"9f84903","exit":0,"stdout":"3.12\n","time":13.95}
+worker -> broker: RDY
 ```
 
-A worker sends READY when it needs jobs, WORKING whilst it's doing them and RESULT when it's done. When a worker isn't processing work, it should periodically send new READY commands.
+A worker sends READY when it needs jobs, WORKING whilst it's doing them and RESULT when it's done. When a worker
+isn't processing work, it should periodically send new READY commands.
 
 ## License
 

@@ -38,9 +38,9 @@ function render_result($cmd, $resp, $brief=false, $slow=false)
 {
 	$c = new ANSIColor();
 
-	$output = $resp->exitcode === 0
+	$output = $resp->exit === 0
 		? $c->bold_brightgreen("OK! ").$c->green("{$cmd} ")
-		: $c->bold_red("FAIL({$resp->exitcode}) ").$c->red("{$cmd} ")
+		: $c->bold_red("FAIL({$resp->exit}) ").$c->red("{$cmd} ")
 		;
 
 	if($slow && $resp->time > $slow)
@@ -80,14 +80,24 @@ register_shutdown_function(function(){
 	echo "\033[?25h";
 });
 
+// load testcloud.json
+if(file_exists('testcloud.json'))
+{
+	if($config = json_decode(file_get_contents('testcloud.json')))
+		$connect = $config->connect;
+}
+
+if($opts->has('--connect') && isset($connect))
+	$connect = $opts->value('--connect');
+
 // test client
 $context = new ZMQContext();
 $client = new ZMQSocket($context, ZMQ::SOCKET_DEALER);
 $client->setSockOpt(ZMQ::SOCKOPT_IDENTITY, trim(`hostname`)."#client".getmypid());
-$client->connect($opts->value('--connect'));
+$client->connect($connect);
 
 if($opts->has('-v'))
-	printf("Connecting to %s\n", $opts->value('--connect'));
+	printf("Connecting to %s\n", $connect);
 
 $timer = microtime(true);
 $commands = array();
@@ -116,7 +126,7 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 	{
 		$line = $socket->recv();
 
-		if(preg_match('/^RESULT (.+?)$/', $line, $m))
+		if(preg_match('/^RES (.+?)$/', $line, $m))
 		{
 			$resp = json_decode($m[1]);
 
@@ -126,10 +136,10 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 
 			$req = $queued[$resp->hash]->req;
 
-			if($resp->exitcode !== 0 || !$opts->has('-f'))
+			if($resp->exit !== 0 || !$opts->has('-f'))
 			{
 				echo render_result($req->cmd, $resp, $opts->has('-b'), $opts->value('-s'));
-				$success = $success && ($resp->exitcode === 0);
+				$success = $success && ($resp->exit === 0);
 			}
 
 			if($opts->has('-p'))
@@ -144,7 +154,7 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 			unset($queued[$resp->hash]);
 			$results [$resp->hash] = $resp;
 		}
-		else if(preg_match('/^(WORKING|QUEUED) (.+?)$/', $line, $m))
+		else if(preg_match('/^(WRK|QUE) (.+?)$/', $line, $m))
 		{
 			// do nothing
 		}
@@ -165,9 +175,9 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 			printf("Sending: {$req->cmd}\n");
 
 		$json = json_encode($req);
-		$socket->send($json);
+		$socket->send("CMD $json");
 
-		$hash = sha1($json);
+		$hash = substr(sha1($json),0,7);
 		$queued[$hash] = (object) array('req'=>$req, 'sent'=>time());
 	}
 }
@@ -177,7 +187,7 @@ ksort($results);
 $outputhash = NULL;
 
 foreach($results as $result)
-	$outputhash = sha1($outputhash.$result->hash.$result->stdout.$result->exitcode);
+	$outputhash = sha1($outputhash.$result->hash.$result->stdout.$result->exit);
 
 echo "\033[K";
 

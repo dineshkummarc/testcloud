@@ -71,17 +71,17 @@ while(true)
 			printf("W (%s): %s\n", $identity, $zmsg->body());
 
 			// control messages from the worker
-			if($zmsg->parts() == 1 && $zmsg->address() == 'READY')
+			if($zmsg->parts() == 1 && $zmsg->address() == 'RDY')
 			{
 				$workers [] = array($identity, time());
 			}
 			else
 			{
-				if(preg_match('/^(QUEUED|WORKING) (.+?)$/', $zmsg->body(), $m))
+				if(preg_match('/^(QUE|WRK) (.+?)$/', $zmsg->body(), $m))
 				{
 					$pending[$m[2]][2] = time();
 				}
-				else if(preg_match('/^RESULT (.+?)$/', $zmsg->body(), $m))
+				else if(preg_match('/^RES (.+?)$/', $zmsg->body(), $m))
 				{
 					$resp = json_decode($m[1]);
 					unset($pending[$resp->hash]);
@@ -95,8 +95,11 @@ while(true)
 			printf("C: %s\n", $zmsg->body());
 			$worker = array_shift(array_shift($workers));
 
-			if(substr($zmsg->body(),0,1) == '{')
-				$pending[sha1($zmsg->body())] = array(clone $zmsg, $worker, microtime(true)*1000);
+			if(preg_match('/^CMD (.+?)$/', $zmsg->body(), $m))
+			{
+				$hash = substr(sha1($m[1]), 0, 7);
+				$pending[$hash] = array(clone $zmsg, $worker, microtime(true)*1000);
+			}
 
 			$zmsg->wrap($worker, "");
 			$zmsg->set_socket($backend)->send();

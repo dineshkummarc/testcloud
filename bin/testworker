@@ -51,7 +51,7 @@ while($running)
 {
 	// wait till we get a test
 	$zmsg = new Zmsg($worker);
-	$zmsg->body_set('READY');
+	$zmsg->body_set('RDY');
 	$zmsg->send();
 	$lastready = time();
 
@@ -59,7 +59,7 @@ while($running)
 	{
 		if((time()-$lastready) > READY_RESEND)
 		{
-			$worker->send("READY");
+			$worker->send("RDY");
 			$lastready = time();
 		}
 	}
@@ -68,12 +68,19 @@ while($running)
 	$zmsg = new Zmsg($worker);
 	$zmsg->recv();
 
-	$body = $zmsg->body();
+	if(!preg_match('/^CMD (.+?)$/', $zmsg->body(), $m))
+	{
+		$zmsg->body_set("WTF");
+		$zmsg->send(false);
+		continue;
+	}
+
+	$body = $m[1];
 	$req = json_decode($body);
-	$hash = sha1($body);
+	$hash = substr(sha1($body),0,7);
 
 	// let the broker know we are still working
-	$zmsg->body_set("QUEUED $hash");
+	$zmsg->body_set("QUE $hash");
 	$zmsg->send(false);
 
 	$timer = microtime(true);
@@ -98,7 +105,7 @@ while($running)
 			$stdout .= fgets($pipes[1], 4096);
 
 		// let the broker know we are still working
-		$zmsg->body_set("WORKING $hash");
+		$zmsg->body_set("WRK $hash");
 		$zmsg->send(false);
 	}
 
@@ -109,12 +116,12 @@ while($running)
 
 	$r = array(
 		'hash'=>$hash,
-		'exitcode'=>$exitcode,
+		'exit'=>$exitcode,
 		'stdout'=>$stdout,
 		'time'=>round((microtime(true)-$timer)*1000, 4),
 	);
 
-	$zmsg->body_set('RESULT '.json_encode($r));
+	$zmsg->body_set('RES '.json_encode($r));
 	$zmsg->send();
 }
 
