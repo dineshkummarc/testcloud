@@ -9,7 +9,7 @@ define('POLL_TIMEOUT', 1000);
 
 $opts = new \Ergo\Console\Options($argv,array(
 	'--help','-h','-v','--brief,-b','--connect,-c=tcp://localhost:2224',
-	'--slow,-s=null','--failonly,-f','--progress,-p','--cwd,-d',
+	'--slow,-s=null','--failonly,-f','--progress,-p','--cwd,-d=',
 	':cmd'
 ));
 
@@ -91,7 +91,7 @@ if(file_exists('testcloud.json'))
 		$connect = $config->connect;
 }
 
-if($opts->has('--connect') && isset($connect))
+if(!isset($connect))
 	$connect = $opts->value('--connect');
 
 // test client
@@ -149,7 +149,7 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 			unset($queued[$resp->hash]);
 			$results [$resp->hash] = $resp;
 		}
-		else if(preg_match('/^(WRK|QUE) (.+?)$/', $line, $m))
+		else if(preg_match('/^(WRK|QUE|NFI) (.+?)$/', $line, $m))
 		{
 			// do nothing
 		}
