@@ -3,7 +3,6 @@
 
 define('QUEUE_TIMEOUT', 5);
 define('WORKER_EXPIRE', 5);
-define('FAIL_RETRY', 5);
 
 require(dirname(__FILE__).'/../vendor/autoload.php');
 require(dirname(__FILE__).'/../lib/Zmsg.php');
@@ -117,7 +116,9 @@ while(true)
 	// requeue commands that have timed out
 	foreach($pending as $hash=>$entry)
 	{
-		if((time() - $entry[2]) > QUEUE_TIMEOUT && count($workers))
+		$elapsed = time() - $entry[2];
+
+		if($elapsed > QUEUE_TIMEOUT && count($workers))
 		{
 			$worker = array_shift(array_shift($workers));
 			$pending[$hash] = array(clone $entry[0], $worker, time());

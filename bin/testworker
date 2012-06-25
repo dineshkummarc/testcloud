@@ -92,29 +92,29 @@ while($running)
 			$sem = sem_get(crc32($req->cwd), 1);
 
 			// use a posix semaphore to protect dog piling
-			if(!sem_acquire($sem))
-				continue;
-
+			sem_acquire($sem);
 			clearstatcache();
 
-			// we're not the first, leave them to it
-			if(is_dir($req->cwd))
+			// we're the first, initialize it
+			if(!is_dir($req->cwd))
 			{
-				sem_release($sem);
-				continue;
+				printf("%s doesn't exist, initializing with %s\n",
+					$req->cwd, $options->value('--init'));
+
+				passthru(
+					sprintf('%s %s',$options->value('--init'), escapeshellarg($req->cwd)),
+					$return
+				);
+
+				if($return !== 0)
+					die("Init script failed");
 			}
-
-			printf("C: %s doesn't exist, initializing with %s\n",
-				$req->cwd, $options->value('--init'));
-
-			passthru(sprintf('%s %s',
-				$options->value('--init'), escapeshellarg($req->cwd)
-			));
 
 			sem_release($sem);
 		}
 		else
 		{
+			printf("No init script, %s doesn't exist\n", $req->cwd);
 			continue;
 		}
 	}
@@ -129,6 +129,7 @@ while($running)
 	$cmd = ($options->has(':cmd'))
 		? $options->value(':cmd') . " {$req->cmd}" : $req->cmd;
 
+	assert(is_dir($dir));
 	echo "C: $cmd (in $dir)\n";
 
 	$proc = proc_open(
