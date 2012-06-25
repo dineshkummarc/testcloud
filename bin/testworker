@@ -18,7 +18,7 @@ function get_first_reader($socket, $timeout)
 }
 
 $options = new \Ergo\Console\Options($argv,array(
-	'--help','-h','--connect=NULL'
+	'--help','-h','--connect=NULL',':cmd'
 ));
 
 // show help
@@ -26,7 +26,7 @@ if($options->has('-h','--help') || $options->errors())
 {
 	$options->printErrors();
 
-	echo "\nusage: $argv[0] [..args] testfile\n\n";
+	echo "\nusage: $argv[0] [..args] [cmd]\n\n";
   echo " --connect broker   : connect to broker, instead of localhost\n";
 	echo " --help             : this documentation\n";
 	echo "\n";
@@ -42,6 +42,7 @@ $context = new ZMQContext();
 $worker = $context->getSocket(ZMQ::SOCKET_DEALER);
 $worker->setSockOpt(ZMQ::SOCKOPT_IDENTITY, $identity);
 $worker->connect($endpoint);
+
 
 $running = true;
 $lastready = false;
@@ -86,11 +87,13 @@ while($running)
 	$timer = microtime(true);
 	$dir = isset($req->cwd) ? realpath($req->cwd) : $cwd;
 	$stdout = NULL;
+	$cmd = ($options->has(':cmd'))
+		? $options->value(':cmd') . " {$req->cmd}" : $req->cmd;
 
-	echo "C: $req->cmd (in $dir)\n";
+	echo "C: $cmd (in $dir)\n";
 
 	$proc = proc_open(
-		"$req->cmd 2>&1",
+		"$cmd 2>&1",
 		array(1=>array('pipe','w')),
 		$pipes,
 		$dir

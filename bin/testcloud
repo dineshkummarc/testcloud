@@ -9,8 +9,8 @@ define('POLL_TIMEOUT', 1000);
 
 $opts = new \Ergo\Console\Options($argv,array(
 	'--help','-h','-v','--brief,-b','--connect,-c=tcp://localhost:2224',
-	'--slow,-s=null','--failonly,-f','--progress,-p',
-	':dir'
+	'--slow,-s=null','--failonly,-f','--progress,-p','--cwd,-d',
+	':cmd'
 ));
 
 // show help
@@ -18,14 +18,15 @@ if($opts->has('-h','--help') || $opts->errors())
 {
 	$opts->printErrors();
 
-	echo "\nusage: $argv[0] [workingdir] [..args]\n\n";
+	echo "\nusage: $argv[0] [cmd] [..args]\n\n";
 
-	echo " --help             : this documentation\n";
-	echo " --connect addr     : connect to a specific broker, defaults to tcp://localhost:2224\n";
-	echo " --brief -b         : display only a brief summary of each command\n";
-	echo " --slow millis      : shows tests that take more than N milliseconds to run as slow\n";
-	echo " --failonly -f      : show only failures\n";
-	echo " --progress -p      : show an ansi progress meter\n";
+	echo " --help -h            : this documentation\n";
+	echo " --connect <addr>     : connect to a specific broker [default: tcp://localhost:2224]\n";
+	echo " --brief -b           : display only a brief summary of each command\n";
+	echo " --slow <ms>          : shows tests that take more than N milliseconds to run as slow\n";
+	echo " --failonly -f        : show only failures\n";
+	echo " --progress -p        : show an ansi progress meter\n";
+	echo " --cwd -d <dir>       : the working directory to send to the worker [default: cwd]\n";
 	echo "\n";
 	exit(1);
 }
@@ -83,7 +84,10 @@ register_shutdown_function(function(){
 // load testcloud.json
 if(file_exists('testcloud.json'))
 {
-	if($config = json_decode(file_get_contents('testcloud.json')))
+	if(!$config = json_decode(file_get_contents('testcloud.json')))
+		die("Failed to parse testcloud.json");
+
+	if(isset($config->connect))
 		$connect = $config->connect;
 }
 
@@ -142,15 +146,6 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 				$success = $success && ($resp->exit === 0);
 			}
 
-			if($opts->has('-p'))
-			{
-				display_progress(
-					count($results),
-					count($commands)+count($results)+count($queued),
-					$timer
-				);
-			}
-
 			unset($queued[$resp->hash]);
 			$results [$resp->hash] = $resp;
 		}
@@ -167,8 +162,15 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 	// send some commands
 	foreach($write as $socket)
 	{
+		$command = array_shift($commands);
+
+		if($opts->has(':cmd'))
+			$command = $opts->value(':cmd') . " $command";
+		else if(isset($config->command))
+			$command = "{$config->command} {$command}";
+
 		$req = (object) array(
-			'cmd'=>array_shift($commands), 'cwd'=>$opts->value(':dir') ?: getcwd()
+			'cmd'=>$command, 'cwd'=>$opts->value('--cwd') ?: getcwd()
 		);
 
 		if($opts->has('-v'))
@@ -179,6 +181,15 @@ while(($line = trim(fgets(STDIN))) || count($queued) > 0)
 
 		$hash = substr(sha1($json),0,7);
 		$queued[$hash] = (object) array('req'=>$req, 'sent'=>time());
+	}
+
+	if($opts->has('-p'))
+	{
+		display_progress(
+			count($results),
+			count($commands)+count($results)+count($queued),
+			$timer
+		);
 	}
 }
 
