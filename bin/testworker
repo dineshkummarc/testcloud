@@ -89,7 +89,7 @@ while($running)
 
 		if($options->has('--init'))
 		{
-			$sem = sem_get($req->cwd, 1);
+			$sem = sem_get(crc32($req->cwd), 1);
 
 			// use a posix semaphore to protect dog piling
 			if(!sem_acquire($sem))
@@ -107,7 +107,10 @@ while($running)
 			printf("C: %s doesn't exist, initializing with %s\n",
 				$req->cwd, $options->value('--init'));
 
-			passthru($options->value('--init')." {$req->cwd}");
+			passthru(sprintf('%s %s',
+				$options->value('--init'), escapeshellarg($req->cwd)
+			));
+
 			sem_release($sem);
 		}
 		else
